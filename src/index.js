@@ -7,6 +7,8 @@ const TCP = require('libp2p-tcp')
 const WS = require('libp2p-websockets')
 const spdy = require('libp2p-spdy')
 const multiaddr = require('multiaddr')
+const mafmt = require('mafmt')
+const parallel = require('run-parallel')
 
 exports = module.exports
 
@@ -19,17 +21,39 @@ exports.Node = function Node (peerInfo) {
     peerInfo.multiaddr.add(multiaddr('/ip4/0.0.0.0/tcp/0'))
   }
 
+  const transports = {
+    tcp: {
+      constructor: TCP,
+      matcher: mafmt.TCP
+    },
+    ws: {
+      constructor: WS,
+      matcher: mafmt.WebSockets
+    }
+  }
+  const addrs = peerInfo.multiaddrs
+  const availableTransports = Object.keys(transports).filter((ts) => {
+    // Only listen on transports we actually have addresses for
+    const matches = addrs.filter((addr) => {
+      return transports[ts].matcher.matches(addr)
+    })
+    return matches.length > 0
+  })
+
   // Swarm
   this.swarm = new Swarm(peerInfo)
-  this.swarm.transport.add('tcp', new TCP())
-  this.swarm.transport.add('ws', new WS())
+  availableTransports.forEach((ts) => {
+    const Constructor = transports[ts].constructor
+    this.swarm.transport.add(ts, new Constructor())
+  })
   this.swarm.connection.addStreamMuxer(spdy)
-  this.swarm.connection.reuse()
+  // this.swarm.connection.reuse()
 
-  this.start = (callback) => {
-    this.swarm.transport.listen('tcp', {}, null, callback)
-    // when we get websockets addr in our config
-    // this.swarm.transport.listen('tcp', {}, null, callback)
+  this.start = (done) => {
+    parallel(availableTransports.map((ts) => (cb) => {
+      // Listen on the given transport
+      this.swarm.transport.listen(ts, {}, null, cb)
+    }), done)
   }
 
   this.routing = null
