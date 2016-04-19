@@ -47,7 +47,7 @@ exports.Node = function Node (peerInfo) {
     this.swarm.transport.add(ts, new Constructor())
   })
   this.swarm.connection.addStreamMuxer(spdy)
-  // this.swarm.connection.reuse()
+  this.swarm.connection.reuse()
 
   this.start = (done) => {
     parallel(availableTransports.map((ts) => (cb) => {
